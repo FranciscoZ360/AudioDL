@@ -1,6 +1,6 @@
-# AudioDL
+# El Sebastián DJ (AudioDL)
 
-App Android para extraer el audio de un video como MP3 con
+App Android personal para extraer el audio de un video como MP3 con
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) (vía `youtubedl-android`), escucharlo con su
 propio reproductor y recortarlo. Todo se guarda en **Música › AudioDL**.
 

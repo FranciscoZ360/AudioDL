@@ -52,11 +52,18 @@ class DownloadScreen(private val act: MainActivity) {
     init {
         val col = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(act.dp(24), act.dp(28), act.dp(24), act.dp(24))
+            setPadding(act.dp(24), 0, act.dp(24), act.dp(24))
         }
 
-        col.addView(act.eyebrow("AudioDL"))
-        col.addView(act.headline("Tu música,\nen MP3."), act.lp(14))
+        // Espacio para que se vea la imagen de fondo antes del título
+        val heroSpace = (act.resources.displayMetrics.heightPixels * 0.34f).toInt()
+        col.addView(View(act), LinearLayout.LayoutParams(MATCH_PARENT, heroSpace))
+        col.addView(act.eyebrow("El Sebastián DJ").apply {
+            setShadowLayer(act.dpf(8f), 0f, act.dpf(1f), 0xCC000000.toInt())
+        })
+        col.addView(act.headline("Tu música,\nen MP3.").apply {
+            setShadowLayer(act.dpf(14f), 0f, act.dpf(2f), 0xCC000000.toInt())
+        }, act.lp(12))
         col.addView(chip, act.lp(20, width = WRAP_CONTENT))
 
         // --- Tarjeta del enlace ---
@@ -165,10 +172,30 @@ class DownloadScreen(private val act: MainActivity) {
             gravity = Gravity.CENTER
         }, act.lp(6))
 
-        view = ScrollView(act).apply {
+        val scroll = ScrollView(act).apply {
             isFillViewport = true
             isVerticalScrollBarEnabled = false
             addView(col, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
+        }
+
+        // Fondo con imagen + degradado oscuro para que el texto se lea
+        val backgroundImage = ImageView(act).apply {
+            setImageResource(R.drawable.bg_home)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+        }
+        val scrim = View(act).apply {
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(
+                    0x2609080F, 0x1A09080F, 0x5909080F,
+                    0xC709080F.toInt(), 0xF209080F.toInt(), Palette.BG
+                )
+            )
+        }
+        view = FrameLayout(act).apply {
+            addView(backgroundImage, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(scrim, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+            addView(scroll, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
         }
         setIdle()
     }

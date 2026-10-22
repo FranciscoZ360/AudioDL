@@ -33,7 +33,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: AudioDL build ${{ github.run_number }}
+          name: El Sebastián DJ · build ${{ github.run_number }}
           body: |
             APK de depuración generado automáticamente desde ${{ github.sha }}.
             Descarga `app-debug.apk` e instálalo en tu Android.
