@@ -1,86 +1,98 @@
 package com.audiodl.app
 
-import android.content.ClipboardManager
-import android.content.ContentValues
+import android.Manifest
 import android.content.Intent
-import android.content.res.ColorStateList
-import android.content.res.Configuration
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.MediaStore
-import android.text.InputType
-import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
-import android.view.inputmethod.EditorInfo
-import android.widget.Button
-import android.widget.EditText
+import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import androidx.lifecycle.lifecycleScope
-import com.yausername.youtubedl_android.YoutubeDL
-import com.yausername.youtubedl_android.YoutubeDLRequest
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var urlInput: EditText
-    private lateinit var downloadButton: Button
-    private lateinit var updateButton: Button
-    private lateinit var pasteButton: Button
-    private lateinit var progressBar: ProgressBar
-    private lateinit var percentText: TextView
-    private lateinit var statusText: TextView
-    private lateinit var statusCard: LinearLayout
+    lateinit var player: AudioPlayer
+        private set
 
-    private var busy = false
+    private lateinit var root: FrameLayout
+    private lateinit var content: FrameLayout
+    private lateinit var tabBar: LinearLayout
+    private val tabs = mutableListOf<LinearLayout>()
+    private lateinit var downloadScreen: DownloadScreen
+    private lateinit var libraryScreen: LibraryScreen
+    private var editor: EditorScreen? = null
 
     private val urlRegex = Regex("""https?://\S+""")
 
-    // ---------- Paleta ----------
-    private val isDark by lazy {
-        (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-            Configuration.UI_MODE_NIGHT_YES
+    private val permissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            if (::libraryScreen.isInitialized) libraryScreen.refresh()
+        }
+
+    private val editorBack = object : OnBackPressedCallback(false) {
+        override fun handleOnBackPressed() = closeEditor()
     }
-    private val cBackground get() = if (isDark) 0xFF121214.toInt() else 0xFFF4F4F6.toInt()
-    private val cSurface get() = if (isDark) 0xFF1E1E22.toInt() else Color.WHITE
-    private val cField get() = if (isDark) 0xFF2A2A30.toInt() else 0xFFF0F0F3.toInt()
-    private val cText get() = if (isDark) 0xFFF2F2F4.toInt() else 0xFF17171A.toInt()
-    private val cTextMuted get() = if (isDark) 0xFF9A9AA3.toInt() else 0xFF6B6B73.toInt()
-    private val cOutline get() = if (isDark) 0xFF3A3A42.toInt() else 0xFFDADAE0.toInt()
-    private val cAccent = 0xFFE5484D.toInt()
-    private val cSuccess = 0xFF30A46C.toInt()
+
+    private val audioPermission: String
+        get() = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
+        else Manifest.permission.READ_EXTERNAL_STORAGE
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         supportActionBar?.hide()
-        window.statusBarColor = cBackground
-        window.navigationBarColor = cBackground
-        val content = buildUi()
-        setContentView(content)
-        WindowCompat.getInsetsController(window, content).apply {
-            isAppearanceLightStatusBars = !isDark
-            isAppearanceLightNavigationBars = !isDark
-        }
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        @Suppress("DEPRECATION")
+        window.statusBarColor = Color.TRANSPARENT
+        @Suppress("DEPRECATION")
+        window.navigationBarColor = Color.TRANSPARENT
 
-        if (!App.initOk) {
-            showStatus("No se pudo iniciar yt-dlp: ${App.initError ?: "error desconocido"}", State.ERROR)
-        }
+        player = AudioPlayer(this)
+        downloadScreen = DownloadScreen(this)
+        libraryScreen = LibraryScreen(this)
 
+        root = FrameLayout(this).apply { background = appBackground() }
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        content = FrameLayout(this)
+        column.addView(content, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        tabBar = buildTabBar()
+        column.addView(tabBar, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply {
+            setMargins(dp(20), dp(6), dp(20), dp(14))
+        })
+        root.addView(column, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        setContentView(root)
+
+        // Android 15 dibuja de borde a borde: respetamos barras, notch y teclado.
+        ViewCompat.setOnApplyWindowInsetsListener(root) { v, insets ->
+            val b = insets.getInsets(
+                WindowInsetsCompat.Type.systemBars() or
+                    WindowInsetsCompat.Type.displayCutout() or
+                    WindowInsetsCompat.Type.ime()
+            )
+            v.setPadding(b.left, b.top, b.right, b.bottom)
+            insets
+        }
+        WindowCompat.getInsetsController(window, root).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
+        onBackPressedDispatcher.addCallback(this, editorBack)
+
+        showTab(0)
+        if (!App.initOk) downloadScreen.showInitError()
         handleShareIntent(intent)
     }
 
@@ -90,393 +102,99 @@ class MainActivity : AppCompatActivity() {
         handleShareIntent(intent)
     }
 
-    // ---------- UI ----------
-
-    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
-
-    private fun rounded(color: Int, radiusDp: Int, strokeColor: Int? = null) = GradientDrawable().apply {
-        setColor(color)
-        cornerRadius = dp(radiusDp).toFloat()
-        if (strokeColor != null) setStroke(dp(1), strokeColor)
+    override fun onDestroy() {
+        libraryScreen.onHidden()
+        editor?.release()
+        player.release()
+        super.onDestroy()
     }
 
-    private fun lp(topMarginDp: Int = 0, height: Int = WRAP_CONTENT) =
-        LinearLayout.LayoutParams(MATCH_PARENT, height).apply { topMargin = dp(topMarginDp) }
+    // ------------------------------------------------------------------
 
-    private fun card(): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        background = rounded(cSurface, 20, if (isDark) null else cOutline)
-        setPadding(dp(18), dp(18), dp(18), dp(18))
-    }
-
-    private fun label(text: String) = TextView(this).apply {
-        this.text = text
-        textSize = 13f
-        setTextColor(cTextMuted)
-        typeface = Typeface.DEFAULT_BOLD
-        letterSpacing = 0.04f
-    }
-
-    private fun styledButton(text: String, filled: Boolean): Button = Button(this).apply {
-        this.text = text
-        isAllCaps = false
-        textSize = 16f
-        typeface = Typeface.DEFAULT_BOLD
-        stateListAnimator = null
-        minHeight = dp(52)
-        if (filled) {
-            background = rounded(cAccent, 14)
-            setTextColor(Color.WHITE)
-        } else {
-            background = rounded(Color.TRANSPARENT, 14, cOutline)
-            setTextColor(cText)
-        }
-    }
-
-    private fun buildUi(): View {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(24))
-        }
-
-        // Encabezado
-        root.addView(TextView(this).apply {
-            text = "AudioDL"
-            textSize = 30f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(cText)
-        }, lp(8))
-        root.addView(TextView(this).apply {
-            text = "Extrae el audio de un video en MP3"
-            textSize = 15f
-            setTextColor(cTextMuted)
-        }, lp(2))
-
-        // Tarjeta del enlace
-        val linkCard = card()
-        linkCard.addView(label("ENLACE DEL VIDEO"))
-
-        urlInput = EditText(this).apply {
-            hint = "https://youtu.be/…"
-            setHintTextColor(cTextMuted)
-            setTextColor(cText)
-            textSize = 15f
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-            isSingleLine = true
-            ellipsize = TextUtils.TruncateAt.END
-            imeOptions = EditorInfo.IME_ACTION_GO
-            background = rounded(cField, 12)
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-            setOnEditorActionListener { _, actionId, _ ->
-                if (actionId == EditorInfo.IME_ACTION_GO) { startDownload(); true } else false
-            }
-        }
-        linkCard.addView(urlInput, lp(10))
-
-        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        pasteButton = styledButton("Pegar", filled = false).apply {
-            textSize = 14f
-            minHeight = dp(44)
-            setOnClickListener { pasteFromClipboard() }
-        }
-        val clearButton = styledButton("Limpiar", filled = false).apply {
-            textSize = 14f
-            minHeight = dp(44)
-            setOnClickListener {
-                urlInput.setText("")
-                resetProgress()
-                showStatus("Pega un enlace o compártelo desde YouTube.", State.IDLE)
-            }
-        }
-        row.addView(pasteButton, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginEnd = dp(6) })
-        row.addView(clearButton, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f).apply { marginStart = dp(6) })
-        linkCard.addView(row, lp(10))
-
-        downloadButton = styledButton("Descargar MP3", filled = true).apply {
-            minHeight = dp(56)
-            setOnClickListener { startDownload() }
-        }
-        linkCard.addView(downloadButton, lp(14))
-
-        root.addView(linkCard, lp(24))
-
-        // Tarjeta de estado
-        statusCard = card()
-        val progressHeader = LinearLayout(this).apply {
+    private fun buildTabBar(): LinearLayout {
+        val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
+            background = roundRect(Palette.SURFACE, 100, Palette.STROKE)
+            setPadding(dp(6), dp(6), dp(6), dp(6))
         }
-        progressHeader.addView(label("ESTADO"), LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
-        percentText = TextView(this).apply {
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-            setTextColor(cTextMuted)
-        }
-        progressHeader.addView(percentText)
-        statusCard.addView(progressHeader)
-
-        progressBar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100
-            progress = 0
-            progressTintList = ColorStateList.valueOf(cAccent)
-            progressBackgroundTintList = ColorStateList.valueOf(cOutline)
-            indeterminateTintList = ColorStateList.valueOf(cAccent)
-        }
-        statusCard.addView(progressBar, lp(10, dp(8)))
-
-        statusText = TextView(this).apply {
-            textSize = 15f
-            setTextColor(cText)
-            setLineSpacing(0f, 1.15f)
-        }
-        statusCard.addView(statusText, lp(12))
-        root.addView(statusCard, lp(16))
-        showStatus("Pega un enlace o compártelo desde YouTube.", State.IDLE)
-
-        // Pie
-        root.addView(TextView(this).apply {
-            text = "Los archivos se guardan en Música › AudioDL."
-            textSize = 13f
-            setTextColor(cTextMuted)
-            gravity = Gravity.CENTER
-        }, lp(20))
-
-        updateButton = styledButton("Actualizar yt-dlp", filled = false).apply {
-            textSize = 14f
-            minHeight = dp(46)
-            setOnClickListener { updateYtDlp() }
-        }
-        root.addView(updateButton, lp(12))
-
-        root.addView(TextView(this).apply {
-            text = "Úsalo solo con contenido propio o de licencia libre."
-            textSize = 12f
-            setTextColor(cTextMuted)
-            gravity = Gravity.CENTER
-        }, lp(12))
-
-        val scroll = ScrollView(this).apply {
-            isFillViewport = true
-            setBackgroundColor(cBackground)
-            addView(root, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        }
-
-        // Respeta barra de estado, barra de navegación, notch y teclado (Android 15 es edge-to-edge).
-        ViewCompat.setOnApplyWindowInsetsListener(scroll) { v, insets ->
-            val bars = insets.getInsets(
-                WindowInsetsCompat.Type.systemBars() or
-                    WindowInsetsCompat.Type.displayCutout() or
-                    WindowInsetsCompat.Type.ime()
-            )
-            v.setPadding(bars.left, bars.top, bars.right, bars.bottom)
-            insets
-        }
-        return scroll
-    }
-
-    private enum class State { IDLE, WORKING, SUCCESS, ERROR }
-
-    private fun showStatus(message: String, state: State) {
-        statusText.text = message
-        statusText.setTextColor(
-            when (state) {
-                State.SUCCESS -> cSuccess
-                State.ERROR -> cAccent
-                else -> cText
+        listOf("Descargar" to Glyph.DOWNLOAD, "Biblioteca" to Glyph.MUSIC).forEachIndexed { i, (label, glyph) ->
+            val tab = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER
+                minimumHeight = dp(50)
+                isClickable = true
+                setOnClickListener { showTab(i) }
             }
-        )
-        statusCard.background = when (state) {
-            State.SUCCESS -> rounded(cSurface, 20, cSuccess)
-            State.ERROR -> rounded(cSurface, 20, cAccent)
-            else -> rounded(cSurface, 20, if (isDark) null else cOutline)
+            tab.addView(ImageView(this).apply {
+                setImageDrawable(GlyphDrawable(glyph, Palette.TEXT))
+            }, LinearLayout.LayoutParams(dp(20), dp(20)).apply { marginEnd = dp(8) })
+            tab.addView(TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(Palette.TEXT)
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            })
+            bar.addView(tab, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
+            tabs += tab
         }
+        return bar
     }
 
-    private fun resetProgress() {
-        progressBar.isIndeterminate = false
-        progressBar.progress = 0
-        percentText.text = ""
-    }
-
-    private fun pasteFromClipboard() {
-        val cm = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-        val text = cm.primaryClip?.takeIf { it.itemCount > 0 }
-            ?.getItemAt(0)?.coerceToText(this)?.toString().orEmpty()
-        val url = urlRegex.find(text)?.value
-        if (url != null) {
-            urlInput.setText(url)
-            urlInput.setSelection(url.length)
-            showStatus("Enlace listo. Pulsa \"Descargar MP3\".", State.IDLE)
-        } else {
-            showStatus("El portapapeles no contiene un enlace.", State.ERROR)
+    fun showTab(index: Int) {
+        tabs.forEachIndexed { i, t ->
+            t.background = if (i == index) gradient() else null
+            t.alpha = if (i == index) 1f else 0.65f
         }
+        content.removeAllViews()
+        val v = if (index == 0) downloadScreen.view else libraryScreen.view
+        content.addView(v, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        if (index == 1) libraryScreen.onShown() else libraryScreen.onHidden()
     }
 
     private fun handleShareIntent(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND || intent.type != "text/plain") return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-        val url = urlRegex.find(text)?.value
-        if (url != null) {
-            urlInput.setText(url)
-            showStatus("Enlace recibido. Pulsa \"Descargar MP3\".", State.IDLE)
-        } else {
-            showStatus("No se encontró un enlace en el texto compartido.", State.ERROR)
-        }
+        val url = urlRegex.find(text)?.value ?: return
+        if (editor != null) closeEditor()
+        showTab(0)
+        downloadScreen.setUrl(url)
     }
 
-    private fun setBusy(value: Boolean) {
-        busy = value
-        for (b in listOf(downloadButton, updateButton, pasteButton)) {
-            b.isEnabled = !value
-            b.alpha = if (value) 0.5f else 1f
-        }
-        urlInput.isEnabled = !value
-        downloadButton.text = if (value) "Trabajando…" else "Descargar MP3"
+    // ------------------------------------------------------------------
+
+    fun playTrack(track: Track) {
+        showTab(1)
+        libraryScreen.play(track)
     }
 
-    // ---------- Descarga ----------
-
-    private fun startDownload() {
-        if (busy) return
-        val raw = urlInput.text.toString().trim()
-        val url = urlRegex.find(raw)?.value
-        if (url == null) {
-            showStatus("Pega un enlace válido (http/https).", State.ERROR)
-            return
-        }
-        if (!App.initOk) {
-            showStatus("No se pudo iniciar yt-dlp: ${App.initError ?: "error desconocido"}", State.ERROR)
-            return
-        }
-
-        setBusy(true)
-        progressBar.isIndeterminate = true
-        percentText.text = ""
-        showStatus("Preparando descarga…", State.WORKING)
-
-        lifecycleScope.launch {
-            try {
-                val title = withContext(Dispatchers.IO) { downloadAndSave(url) }
-                progressBar.isIndeterminate = false
-                progressBar.progress = 100
-                percentText.text = "100%"
-                showStatus("✔ Guardado en Música › AudioDL\n$title", State.SUCCESS)
-            } catch (e: Exception) {
-                resetProgress()
-                showStatus("Error: ${e.message ?: e.toString()}", State.ERROR)
-            } finally {
-                setBusy(false)
-            }
-        }
+    fun openEditor(track: Track) {
+        player.pause()
+        editor?.let { closeEditor() }
+        val e = EditorScreen(this, track)
+        editor = e
+        root.addView(e.view, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        tabBar.visibility = View.INVISIBLE
+        editorBack.isEnabled = true
     }
 
-    /** Descarga con yt-dlp a cacheDir/dl, copia el MP3 a Music/AudioDL y devuelve el título. */
-    private suspend fun downloadAndSave(url: String): String {
-        val tmpDir = File(cacheDir, "dl")
-        tmpDir.deleteRecursively()
-        tmpDir.mkdirs()
-
-        val request = YoutubeDLRequest(url).apply {
-            addOption("-x")
-            addOption("--audio-format", "mp3")
-            addOption("--audio-quality", "0")
-            addOption("--no-playlist")
-            addOption("-o", "${tmpDir.absolutePath}/%(title)s.%(ext)s")
-        }
-
-        YoutubeDL.getInstance().execute(request, null) { progress, _, line ->
-            runOnUiThread {
-                if (progress > 0f) {
-                    val p = progress.toInt().coerceIn(0, 100)
-                    progressBar.isIndeterminate = false
-                    progressBar.progress = p
-                    percentText.text = "$p%"
-                    statusText.text = "Descargando audio…"
-                } else if (line.contains("ExtractAudio") || line.contains("ffmpeg", ignoreCase = true)) {
-                    progressBar.isIndeterminate = true
-                    percentText.text = ""
-                    statusText.text = "Convirtiendo a MP3…"
-                }
-            }
-        }
-
-        val mp3 = tmpDir.listFiles { f -> f.extension.equals("mp3", ignoreCase = true) }
-            ?.maxByOrNull { it.lastModified() }
-            ?: throw IllegalStateException("No se generó el archivo MP3.")
-
-        withContext(Dispatchers.Main) {
-            progressBar.isIndeterminate = true
-            percentText.text = ""
-            statusText.text = "Guardando en Música › AudioDL…"
-        }
-
-        try {
-            saveToMusic(mp3)
-        } finally {
-            tmpDir.deleteRecursively()
-        }
-        return mp3.nameWithoutExtension
+    fun closeEditor() {
+        val e = editor ?: return
+        e.release()
+        root.removeView(e.view)
+        editor = null
+        tabBar.visibility = View.VISIBLE
+        editorBack.isEnabled = false
+        libraryScreen.refresh()
     }
 
-    private fun saveToMusic(file: File) {
-        val resolver = contentResolver
-        val values = ContentValues().apply {
-            put(MediaStore.Audio.Media.DISPLAY_NAME, file.name)
-            put(MediaStore.Audio.Media.MIME_TYPE, "audio/mpeg")
-            put(MediaStore.Audio.Media.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/AudioDL")
-            put(MediaStore.Audio.Media.IS_PENDING, 1)
-        }
-        val collection = MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        val uri = resolver.insert(collection, values)
-            ?: throw IllegalStateException("No se pudo crear el archivo en Música › AudioDL.")
-
-        try {
-            resolver.openOutputStream(uri)?.use { out ->
-                file.inputStream().use { it.copyTo(out) }
-            } ?: throw IllegalStateException("No se pudo escribir el archivo.")
-
-            values.clear()
-            values.put(MediaStore.Audio.Media.IS_PENDING, 0)
-            resolver.update(uri, values, null, null)
-        } catch (e: Exception) {
-            resolver.delete(uri, null, null)
-            throw e
-        }
+    fun onTrackSaved() {
+        libraryScreen.refresh()
     }
 
-    // ---------- Actualizar yt-dlp ----------
+    fun hasAudioPermission(): Boolean =
+        ContextCompat.checkSelfPermission(this, audioPermission) == PackageManager.PERMISSION_GRANTED
 
-    private fun updateYtDlp() {
-        if (busy) return
-        if (!App.initOk) {
-            showStatus("No se pudo iniciar yt-dlp: ${App.initError ?: "error desconocido"}", State.ERROR)
-            return
-        }
-        setBusy(true)
-        progressBar.isIndeterminate = true
-        percentText.text = ""
-        showStatus("Actualizando yt-dlp…", State.WORKING)
-
-        lifecycleScope.launch {
-            try {
-                val status = withContext(Dispatchers.IO) {
-                    YoutubeDL.getInstance().updateYoutubeDL(
-                        applicationContext,
-                        YoutubeDL.UpdateChannel._STABLE
-                    )
-                }
-                val msg = when (status) {
-                    YoutubeDL.UpdateStatus.DONE -> "✔ yt-dlp actualizado."
-                    YoutubeDL.UpdateStatus.ALREADY_UP_TO_DATE -> "✔ yt-dlp ya está al día."
-                    else -> "Actualización terminada."
-                }
-                showStatus(msg, State.SUCCESS)
-            } catch (e: Exception) {
-                showStatus("Error al actualizar: ${e.message ?: e.toString()}", State.ERROR)
-            } finally {
-                resetProgress()
-                setBusy(false)
-            }
-        }
+    fun requestAudioPermission() {
+        permissionLauncher.launch(audioPermission)
     }
 }
