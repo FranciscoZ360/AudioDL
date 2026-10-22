@@ -55,15 +55,22 @@ class DownloadScreen(private val act: MainActivity) {
             setPadding(act.dp(24), 0, act.dp(24), act.dp(24))
         }
 
-        // Espacio para que se vea la imagen de fondo antes del título
-        val heroSpace = (act.resources.displayMetrics.heightPixels * 0.34f).toInt()
-        col.addView(View(act), LinearLayout.LayoutParams(MATCH_PARENT, heroSpace))
-        col.addView(act.eyebrow("El Sebastián DJ").apply {
-            setShadowLayer(act.dpf(8f), 0f, act.dpf(1f), 0xCC000000.toInt())
+        // Logo en la esquina superior izquierda
+        col.addView(ImageView(act).apply {
+            setImageResource(R.drawable.logo)
+            adjustViewBounds = true
+            scaleType = ImageView.ScaleType.FIT_START
+        }, LinearLayout.LayoutParams(act.dp(150), WRAP_CONTENT).apply {
+            topMargin = act.dp(12)
+            marginStart = -act.dp(6)
         })
-        col.addView(act.headline("Tu música,\nen MP3.").apply {
+
+        // Espacio para que se vea la imagen de fondo antes del título
+        val heroSpace = (act.resources.displayMetrics.heightPixels * 0.16f).toInt()
+        col.addView(View(act), LinearLayout.LayoutParams(MATCH_PARENT, heroSpace))
+        col.addView(act.headline("Tu música,\nen MP3.", 32f).apply {
             setShadowLayer(act.dpf(14f), 0f, act.dpf(2f), 0xCC000000.toInt())
-        }, act.lp(12))
+        })
         col.addView(chip, act.lp(20, width = WRAP_CONTENT))
 
         // --- Tarjeta del enlace ---

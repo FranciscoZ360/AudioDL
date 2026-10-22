@@ -11,6 +11,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -94,6 +95,58 @@ class MainActivity : AppCompatActivity() {
         showTab(0)
         if (!App.initOk) downloadScreen.showInitError()
         handleShareIntent(intent)
+        if (savedInstanceState == null) showIntro()
+    }
+
+    // ------------------------------------------------------------------
+    // Presentación al abrir la app
+
+    private var intro: FrameLayout? = null
+
+    private fun showIntro() {
+        val overlay = FrameLayout(this).apply {
+            background = appBackground()
+            isClickable = true
+            setOnClickListener { dismissIntro() }
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
+        val logo = ImageView(this).apply {
+            setImageResource(R.drawable.logo)
+            adjustViewBounds = true
+            alpha = 0f
+            scaleX = 0.85f
+            scaleY = 0.85f
+        }
+        val logoWidth = (resources.displayMetrics.widthPixels * 0.84f).toInt()
+        box.addView(logo, LinearLayout.LayoutParams(logoWidth, WRAP_CONTENT))
+        val credit = TextView(this).apply {
+            text = "App desarrollada por un tío orgulloso"
+            textSize = 15f
+            setTextColor(Palette.TEXT_SOFT)
+            gravity = Gravity.CENTER
+            letterSpacing = 0.02f
+            alpha = 0f
+            translationY = dpf(12f)
+        }
+        box.addView(credit, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(28) })
+        overlay.addView(box, FrameLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT, Gravity.CENTER))
+        root.addView(overlay, FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        intro = overlay
+
+        logo.animate().alpha(1f).scaleX(1f).scaleY(1f)
+            .setDuration(800).setInterpolator(DecelerateInterpolator()).start()
+        credit.animate().alpha(1f).translationY(0f)
+            .setStartDelay(550).setDuration(600).start()
+        overlay.postDelayed({ dismissIntro() }, 2800)
+    }
+
+    private fun dismissIntro() {
+        val o = intro ?: return
+        intro = null
+        o.animate().alpha(0f).setDuration(400).withEndAction { root.removeView(o) }.start()
     }
 
     override fun onNewIntent(intent: Intent) {

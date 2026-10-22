@@ -309,7 +309,7 @@ class StatusChip(ctx: Context) : LinearLayout(ctx) {
         background = ctx.roundRect(0x14FFFFFF, 100, Palette.STROKE)
         setPadding(ctx.dp(16), ctx.dp(9), ctx.dp(18), ctx.dp(9))
         addView(dot, LayoutParams(ctx.dp(9), ctx.dp(9)).apply { marginEnd = ctx.dp(11) })
-        text.textSize = 15f
+        text.textSize = 14f
         text.setTextColor(Palette.TEXT_SOFT)
         text.maxLines = 2
         text.ellipsize = TextUtils.TruncateAt.END
