@@ -44,6 +44,8 @@ class DownloadScreen(private val act: MainActivity) {
     private val resultActions: LinearLayout
     private val downloadButton: PillButton
     private val updateButton: PillButton
+    private val appUpdateButton: PillButton
+    private var pendingApk: File? = null
 
     private var busy = false
     private var lastTrack: Track? = null
@@ -175,6 +177,14 @@ class DownloadScreen(private val act: MainActivity) {
         }
         col.addView(updateButton, act.lp(10, width = WRAP_CONTENT).apply { gravity = Gravity.CENTER_HORIZONTAL })
 
+        appUpdateButton = PillButton(act, "Actualizar la app", Glyph.DOWNLOAD, PillStyle.SECONDARY, 48, 15f).apply {
+            setOnClickListener { updateApp() }
+        }
+        col.addView(appUpdateButton, act.lp(6, width = WRAP_CONTENT).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        col.addView(act.body("Versión instalada: build ${Updater.currentBuild}", 12f, Palette.MUTED).apply {
+            gravity = Gravity.CENTER
+        }, act.lp(4))
+
         col.addView(act.body("Úsalo solo con contenido propio o de licencia libre.", 12f, Palette.MUTED).apply {
             gravity = Gravity.CENTER
         }, act.lp(6))
@@ -240,6 +250,7 @@ class DownloadScreen(private val act: MainActivity) {
         busy = value
         downloadButton.isEnabled = !value
         updateButton.isEnabled = !value
+        appUpdateButton.isEnabled = !value
         pasteButton.isEnabled = !value
         clearButton.isEnabled = !value
         urlInput.isEnabled = !value
@@ -388,6 +399,67 @@ class DownloadScreen(private val act: MainActivity) {
             } finally {
                 setBusy(false)
             }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Actualización de la propia app desde GitHub Releases
+
+    private fun updateApp() {
+        if (busy) return
+
+        // Si ya se descargó y faltaba el permiso, no se vuelve a descargar.
+        pendingApk?.takeIf { it.exists() }?.let { apk ->
+            installOrAskPermission(apk)
+            return
+        }
+
+        setBusy(true)
+        resultCard.visibility = View.GONE
+        chip.set("Buscando actualización…", Palette.AMBER)
+        showProgress(null, "Consultando GitHub…")
+
+        act.lifecycleScope.launch {
+            try {
+                val latest = withContext(Dispatchers.IO) { Updater.fetchLatest() }
+                if (latest == null) {
+                    progressCard.visibility = View.GONE
+                    chip.set("No se encontró un APK en Releases", Palette.RED)
+                    return@launch
+                }
+                if (latest.build <= Updater.currentBuild) {
+                    progressCard.visibility = View.GONE
+                    chip.set("Ya tienes la última versión (build ${Updater.currentBuild})", Palette.GREEN)
+                    return@launch
+                }
+
+                chip.set("Descargando build ${latest.build}…", Palette.AMBER)
+                val apk = withContext(Dispatchers.IO) {
+                    Updater.download(act, latest) { pct ->
+                        act.runOnUiThread {
+                            showProgress(pct.takeIf { it >= 0 }, "Descargando la versión nueva…")
+                        }
+                    }
+                }
+                progressCard.visibility = View.GONE
+                pendingApk = apk
+                installOrAskPermission(apk)
+            } catch (e: Exception) {
+                chip.set("No se pudo actualizar la app", Palette.RED)
+                showError("Error al actualizar la app", e.message ?: e.toString())
+            } finally {
+                setBusy(false)
+            }
+        }
+    }
+
+    private fun installOrAskPermission(apk: File) {
+        if (Updater.canInstall(act)) {
+            chip.set("Abriendo el instalador…", Palette.GREEN)
+            Updater.install(act, apk)
+        } else {
+            chip.set("Activa \"Permitir desde esta fuente\" y vuelve a tocar Actualizar", Palette.AMBER)
+            Updater.openInstallPermissionSettings(act)
         }
     }
 }

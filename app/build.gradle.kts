@@ -11,16 +11,39 @@ android {
         applicationId = "com.audiodl.app"
         minSdk = 29
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        // Cada compilación de GitHub Actions lleva su número (build-N) como versión,
+        // así la app puede saber si hay una más nueva en Releases.
+        val buildNumber = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionCode = buildNumber
+        versionName = "2.1 (build $buildNumber)"
+        buildConfigField("int", "BUILD_NUMBER", buildNumber.toString())
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
+    // Firma fija: todas las compilaciones usan la misma clave, así Android acepta
+    // instalar una versión nueva encima de la anterior sin desinstalar.
+    signingConfigs {
+        create("fixed") {
+            storeFile = file("audiodl.jks")
+            storePassword = "audiodl123"
+            keyAlias = "audiodl"
+            keyPassword = "audiodl123"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("fixed")
+        }
         release {
+            signingConfig = signingConfigs.getByName("fixed")
             isMinifyEnabled = false
         }
     }

@@ -17,6 +17,8 @@ propio reproductor y recortarlo. Todo se guarda en **Música › AudioDL**.
   vista previa del recorte y fundido suave opcional. El recorte se guarda como un MP3 nuevo;
   el original no se modifica.
 - **Actualizar yt-dlp**: si las descargas empiezan a fallar, actualiza el motor desde la app.
+- **Actualizar la app**: busca el release más reciente en GitHub, descarga el APK y abre el
+  instalador. La primera vez Android pide activar *Permitir desde esta fuente*.
 
 ## Instalar
 
@@ -25,8 +27,10 @@ propio reproductor y recortarlo. Todo se guarda en **Música › AudioDL**.
 3. Ábrelo y permite *instalar apps de fuentes desconocidas* cuando Android lo pida.
 
 Cada push a `main` compila un APK nuevo con GitHub Actions y lo publica como release
-`build-N`. Como cada compilación usa una clave de depuración distinta, para actualizar
-puede ser necesario desinstalar la versión anterior.
+`build-N`. Desde la versión 2.1 todas las compilaciones se firman con la misma clave
+(`app/audiodl.jks`), así que las actualizaciones se instalan encima sin desinstalar: basta
+con tocar **Actualizar la app**. Si vienes de una versión anterior a la 2.1, desinstálala
+una última vez antes de instalar esta.
 
 La Biblioteca pide permiso para leer audio solo para mostrar archivos guardados por una
 instalación anterior; si lo niegas, igual verás los que descargues de ahora en adelante.
