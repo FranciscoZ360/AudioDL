@@ -1,6 +1,6 @@
 # El Sebastián DJ (AudioDL)
 
-App Android personal para extraer el audio de un video como MP3 con
+App personal para Android y Windows para extraer el audio de un video como MP3 con
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) (vía `youtubedl-android`), escucharlo con su
 propio reproductor y recortarlo. Todo se guarda en **Música › AudioDL**.
 
@@ -36,3 +36,22 @@ La Biblioteca pide permiso para leer audio solo para mostrar archivos guardados 
 instalación anterior; si lo niegas, igual verás los que descargues de ahora en adelante.
 
 Requisitos: Android 10 o superior (ARM de 32 o 64 bits).
+
+## Versión para PC (Windows)
+
+La misma app para Windows 10/11 de 64 bits, con descarga de MP3, biblioteca con
+reproductor (barra de avance, ±10 s, anterior/siguiente, volumen) y editor de recortes con
+forma de onda. Los audios se guardan en **Música › AudioDL** de tu PC.
+
+1. Entra a la pestaña **Releases** y descarga `ElSebastianDJ-Setup.exe` del release más reciente.
+2. Ábrelo. Si Windows muestra *Windows protegió su PC*, toca *Más información › Ejecutar de
+   todas formas* (pasa porque el instalador no está firmado).
+3. Se instala solo para tu usuario, sin pedir permisos de administrador.
+
+Para actualizar, pulsa **Actualizar la app**: descarga el instalador nuevo, cierra la app,
+la actualiza y la vuelve a abrir. Atajos: *Espacio* reproduce o pausa; puedes arrastrar un
+enlace sobre la ventana.
+
+El código está en `desktop/` (Python + PySide6). GitHub Actions lo compila con PyInstaller,
+le agrega yt-dlp, FFmpeg y Deno, prueba el `.exe` sin pantalla y arma el instalador con
+Inno Setup. El APK y el instalador se publican juntos en cada release `build-N`.

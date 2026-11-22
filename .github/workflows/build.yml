@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK + Windows
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  android:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,12 +29,97 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PySide6 + PyInstaller
+        run: python -m pip install -r desktop/requirements.txt
+
+      - name: Download yt-dlp, FFmpeg and Deno
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $bin = "desktop/bin"
+          New-Item -ItemType Directory -Force $bin | Out-Null
+          Invoke-WebRequest "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile "$bin/yt-dlp.exe"
+          Invoke-WebRequest "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg_x
+          Copy-Item (Get-ChildItem ffmpeg_x -Recurse -Filter ffmpeg.exe | Select-Object -First 1).FullName $bin
+          # yt-dlp necesita un motor de JavaScript (Deno) para YouTube.
+          Invoke-WebRequest "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip" -OutFile deno.zip
+          Expand-Archive deno.zip -DestinationPath $bin -Force
+          Get-ChildItem $bin | Format-Table Name, Length
+
+      - name: Write build number
+        run: Set-Content -Path desktop/build_info.py -Value "BUILD_NUMBER = ${{ github.run_number }}" -Encoding utf8
+
+      - name: Build with PyInstaller
+        working-directory: desktop
+        run: python -m PyInstaller ElSebastianDJ.spec --noconfirm --clean
+
+      - name: Self-test the compiled app
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "selftest.log"
+          $p = Start-Process -FilePath "desktop/dist/ElSebastianDJ/ElSebastianDJ.exe" `
+                -ArgumentList "--selftest", "`"$log`"" -Wait -PassThru
+          if (Test-Path $log) { Get-Content $log -Encoding utf8 } else { Write-Host "No se generó el registro" }
+          if ($p.ExitCode -ne 0) { throw "La autoprueba falló (código $($p.ExitCode))" }
+
+      - name: Build installer with Inno Setup
+        working-directory: desktop
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+          & $iscc "/DBuildNumber=${{ github.run_number }}" installer.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup falló" }
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: desktop/Output/ElSebastianDJ-Setup.exe
+
+  release:
+    needs: [android, windows]
+    # El APK se publica aunque falle la versión de Windows.
+    if: ${{ !cancelled() && needs.android.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download builds
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
       - name: Publish Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
           name: El Sebastián DJ · build ${{ github.run_number }}
           body: |
-            APK de depuración generado automáticamente desde ${{ github.sha }}.
-            Descarga `app-debug.apk` e instálalo en tu Android.
-          files: app/build/outputs/apk/debug/app-debug.apk
+            Compilado automáticamente desde ${{ github.sha }}.
+            - **Android:** descarga `app-debug.apk` e instálalo en tu celular.
+            - **Windows:** descarga `ElSebastianDJ-Setup.exe` y ábrelo.
+          files: |
+            dist/app-debug.apk
+            dist/ElSebastianDJ-Setup.exe

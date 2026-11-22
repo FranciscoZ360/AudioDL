@@ -11,3 +11,10 @@ captures/
 *.keystore
 *.jks
 !app/audiodl.jks
+
+# Versión de PC
+desktop/bin/
+desktop/dist/
+desktop/Output/
+desktop/build_info.py
+__pycache__/
