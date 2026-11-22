@@ -11,9 +11,9 @@ a = Analysis(
         (str(here / "assets"), "assets"),
         (str(here / "bin"), "bin"),  # yt-dlp.exe, ffmpeg.exe y deno.exe (los baja Actions)
     ],
-    hiddenimports=["build_info"],
-    excludes=["tkinter", "unittest", "pydoc", "PySide6.QtQml", "PySide6.QtQuick",
-              "PySide6.QtWebEngineCore", "PySide6.QtPdf", "PySide6.Qt3DCore"],
+    hiddenimports=["build_info", "PySide6.QtMultimedia"],
+    excludes=["tkinter", "unittest", "pydoc", "PySide6.QtWebEngineCore", "PySide6.QtPdf",
+              "PySide6.Qt3DCore"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
@@ -26,6 +26,8 @@ exe = EXE(
     name="ElSebastianDJ",
     icon=str(here / "assets" / "icon.ico"),
     console=False,
+    # Sin ventana de error que se quede esperando un clic (importante en Actions).
+    disable_windowed_traceback=True,
     upx=False,
 )
 

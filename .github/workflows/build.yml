@@ -69,17 +69,30 @@ jobs:
       - name: Write build number
         run: Set-Content -Path desktop/build_info.py -Value "BUILD_NUMBER = ${{ github.run_number }}" -Encoding utf8
 
+      - name: Self-test from source
+        timeout-minutes: 3
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $log = Join-Path $env:RUNNER_TEMP "selftest-src.log"
+          python desktop/app.py --selftest $log
+          $code = $LASTEXITCODE
+          if (Test-Path $log) { Get-Content $log -Encoding utf8 }
+          if ($code -ne 0) { throw "La autoprueba desde el código falló (código $code)" }
+
       - name: Build with PyInstaller
         working-directory: desktop
         run: python -m PyInstaller ElSebastianDJ.spec --noconfirm --clean
 
       - name: Self-test the compiled app
+        timeout-minutes: 3
         env:
           QT_QPA_PLATFORM: offscreen
         run: |
           $log = Join-Path $env:RUNNER_TEMP "selftest.log"
           $p = Start-Process -FilePath "desktop/dist/ElSebastianDJ/ElSebastianDJ.exe" `
-                -ArgumentList "--selftest", "`"$log`"" -Wait -PassThru
+                -ArgumentList "--selftest", "`"$log`"" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); throw "La app compilada no terminó la autoprueba a tiempo" }
           if (Test-Path $log) { Get-Content $log -Encoding utf8 } else { Write-Host "No se generó el registro" }
           if ($p.ExitCode -ne 0) { throw "La autoprueba falló (código $($p.ExitCode))" }
 
